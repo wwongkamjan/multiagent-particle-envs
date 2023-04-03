@@ -84,10 +84,13 @@ class World(object):
         # list of agents and entities (can change at execution-time!)
         self.agents = []
         self.landmarks = []
+        self.preys = []
         # communication channel dimensionality
         self.dim_c = 0
         # position dimensionality
         self.dim_p = 2
+        # position range
+        self.range_p = 1
         # color dimensionality
         self.dim_color = 3
         # simulation timestep
@@ -97,27 +100,43 @@ class World(object):
         # contact response parameters
         self.contact_force = 1e+2
         self.contact_margin = 1e-3
+        # observation info
+        self.num_agents_obs = 0
+        self.num_landmarks_obs = 0
+        self.num_preys_obs = 0
 
     # return all entities in the world
     @property
     def entities(self):
-        return self.agents + self.landmarks
+        return self.agents + self.preys + self.landmarks 
 
     # return all agents controllable by external policies
     @property
     def policy_agents(self):
         return [agent for agent in self.agents if agent.action_callback is None]
 
+    # return all preys controllable by external policies
+    @property
+    def policy_preys(self):
+        return [prey for prey in self.preys if prey.action_callback is None]
+
     # return all agents controlled by world scripts
     @property
     def scripted_agents(self):
         return [agent for agent in self.agents if agent.action_callback is not None]
 
+    # return all preys controlled by world scripts
+    @property
+    def scripted_preys(self):
+        return [prey for prey in self.preys if prey.action_callback is not None]
+
     # update state of the world
     def step(self):
-        # set actions for scripted agents 
+        # set actions for scripted agents and preys
         for agent in self.scripted_agents:
             agent.action = agent.action_callback(agent, self)
+        for prey in self.scripted_preys:
+            prey.action = prey.action_callback(prey, self)
         # gather forces applied to entities
         p_force = [None] * len(self.entities)
         # apply agent physical controls
@@ -126,9 +145,11 @@ class World(object):
         p_force = self.apply_environment_force(p_force)
         # integrate physical state
         self.integrate_state(p_force)
-        # update agent state
+        # update agent and prey state
         for agent in self.agents:
             self.update_agent_state(agent)
+        for prey in self.preys:
+            self.update_agent_state(prey)
 
     # gather agent action forces
     def apply_action_force(self, p_force):
@@ -136,7 +157,11 @@ class World(object):
         for i,agent in enumerate(self.agents):
             if agent.movable:
                 noise = np.random.randn(*agent.action.u.shape) * agent.u_noise if agent.u_noise else 0.0
-                p_force[i] = agent.action.u + noise                
+                p_force[i] = agent.action.u + noise  
+        for j,prey in enumerate(self.preys):
+            if prey.movable:
+                noise = np.random.randn(*prey.action.u.shape) * prey.u_noise if prey.u_noise else 0.0
+                p_force[j+len(self.agents)] = prey.action.u + noise                 
         return p_force
 
     # gather physical forces acting on entities

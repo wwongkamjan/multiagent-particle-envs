@@ -17,8 +17,13 @@ class MultiAgentEnv(gym.Env):
 
         self.world = world
         self.agents = self.world.policy_agents
+        self.preys = self.world.policy_preys
         # set required vectorized gym env property
-        self.n = len(world.policy_agents)
+        self.n_agents = len(world.policy_agents)
+        self.n_landmarks = len(world.landmarks)
+        self.n_landmarks_obs = world.num_landmarks_obs
+        self.n_agents_obs = world.num_agents_obs
+        self.n_preys_obs = world.num_preys_obs
         # scenario callbacks
         self.reset_callback = reset_callback
         self.reward_callback = reward_callback
@@ -33,6 +38,8 @@ class MultiAgentEnv(gym.Env):
         self.force_discrete_action = world.discrete_action if hasattr(world, 'discrete_action') else False
         # if true, every agent has the same reward
         self.shared_reward = world.collaborative if hasattr(world, 'collaborative') else False
+        self.range_p = world.range_p
+        self.dim_p = world.dim_p
         self.time = 0
 
         # configure spaces
@@ -77,6 +84,18 @@ class MultiAgentEnv(gym.Env):
             self.viewers = [None] * self.n
         self._reset_render()
 
+    def bound(self, x):
+        d = np.zeros(2)
+        if abs(x[0])>abs(x[1]) and x[0]<0 and abs(x[0])>0.8*self.range_p:
+            d[0] = 2
+        if abs(x[0])>abs(x[1]) and x[0]>0 and abs(x[0])>0.8*self.range_p:
+            d[0] = -2
+        if abs(x[0])<abs(x[1]) and x[1]<0 and abs(x[1])>0.8*self.range_p:
+            d[1] = 2
+        if abs(x[0])<abs(x[1]) and x[1]>0 and abs(x[1])>0.8*self.range_p:
+            d[1] = -2
+        return d
+
     def step(self, action_n):
         obs_n = []
         reward_n = []
@@ -86,21 +105,45 @@ class MultiAgentEnv(gym.Env):
         # set action for each agent
         for i, agent in enumerate(self.agents):
             self._set_action(action_n[i], agent, self.action_space[i])
+        # set action for each prey
+        for j, prey in enumerate(self.preys):
+            prey_action = np.zeros(self.action_space[0].n)
+            min_dist = 10000
+            direction = []
+            # move following the oppisite direction of closest agent
+            for agent in self.agents:
+                dist = np.sqrt(np.sum(np.square(prey.state.p_pos - agent.state.p_pos)))
+                if dist < min_dist:
+                    min_dist = dist
+                    direction = (prey.state.p_pos - agent.state.p_pos)/dist
+                    direction_intensity = np.abs(direction)
+                    direction[np.argmax(direction_intensity)] = np.sign(direction[np.argmax(direction_intensity)])*1
+                    direction[np.argmin(direction_intensity)] = 0
+            # not allow to cross the boundary
+            in_bound = self.bound(prey.state.p_pos)
+            prey_action[1] = direction[0] + in_bound[0]
+            prey_action[3] = direction[1] + in_bound[1]
+            # if captured, prey chooses to stay
+            if min_dist <= (prey.size + agent.size):
+                prey_action[0] = 1
+                prey_action[1] = 0
+                prey_action[3] = 0
+            self.force_discrete_action = False
+            self._set_action(prey_action, prey, self.action_space[0])
+            self.force_discrete_action = True
         # advance world state
         self.world.step()
         # record observation for each agent
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
-            reward_n.append(self._get_reward(agent))
+            r = self._get_reward(agent)
+            reward_n.append(r)
             done_n.append(self._get_done(agent))
-
             info_n['n'].append(self._get_info(agent))
-
         # all agents get total reward in cooperative case
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [reward] * self.n
-
         return obs_n, reward_n, done_n, info_n
 
     def reset(self):
@@ -210,7 +253,7 @@ class MultiAgentEnv(gym.Env):
                     else:
                         word = alphabet[np.argmax(other.state.c)]
                     message += (other.name + ' to ' + agent.name + ': ' + word + '   ')
-            print(message)
+          
 
         for i in range(len(self.viewers)):
             # create viewers (if necessary)
