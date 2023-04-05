@@ -115,9 +115,8 @@ class Scenario(BaseScenario):
         dis_lm_n = []
         num_preys_obs = world.num_preys_obs
         for entity in world.preys:  # world.entities:
-            if not entity.eaten:
-                entity_pos.append(entity.state.p_pos - agent.state.p_pos)
-                dis_lm_n.append(np.sqrt(np.sum(np.square(agent.state.p_pos - entity.state.p_pos))))
+            entity_pos.append(entity.state.p_pos - agent.state.p_pos)
+            dis_lm_n.append(np.sqrt(np.sum(np.square(agent.state.p_pos - entity.state.p_pos))))
         sort_index = sorted(range(len(dis_lm_n)), key=lambda k: dis_lm_n[k])
         near_lm_pos = [entity_pos[sort_index[i]] for i in range(num_preys_obs)]
         # get positions of predefined agents
