@@ -3,18 +3,16 @@ from multiagent.core import World, Agent, Landmark
 from multiagent.scenario import BaseScenario
 
 class Scenario(BaseScenario):
-    
     def make_world(self):
         world = World()
         # set any world properties first
-        world.POS_PREY_REWARD = 1.0
         world.dim_c = 2
-        num_agents = 5
+        num_agents = 7
         num_preys = 3
         world.collaborative = False
         world.discrete_action = True
-        world.num_agents_obs = 2
-        world.num_preys_obs = 1
+        world.num_agents_obs = 3
+        world.num_preys_obs = 3
         # add agents
         world.agents = [Agent() for i in range(num_agents)]
         for i, agent in enumerate(world.agents):
@@ -56,7 +54,6 @@ class Scenario(BaseScenario):
                         if np.sqrt(np.sum(np.square(prey.state.p_pos - world.preys[j].state.p_pos)))>0.00:
                             break
                         else: prey.state.p_pos = np.random.uniform(-world.range_p, +world.range_p, world.dim_p)
-            prey.eaten = False
             prey.state.p_vel = np.zeros(world.dim_p)
 
     def benchmark_data(self, agent, world):
@@ -92,21 +89,15 @@ class Scenario(BaseScenario):
         #dists = [np.sqrt(np.sum(np.square(agent.state.p_pos - l.state.p_pos))) for l in world.landmarks]
         #rew = rew - min(dists)
         # global reward
-        # for l in world.preys:
-        #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
-        #     rew -= min(dists)
-        
+        for l in world.preys:
+            dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
+            rew -= min(dists)
         if agent.collide:
-            for p in world.preys:
-                if not p.eaten and self.is_collision(agent, p):
-                    rew += world.POS_PREY_REWARD  
-                    p.eaten = True          
-
-        if agent.collide:
-            for b in world.agents:
-                if agent is b: continue
-                if self.is_collision(agent, b):
-                    rew -= 0.5
+            for a in world.agents:
+                for b in world.agents:
+                    if a is b: continue
+                    if self.is_collision(a, b):
+                        rew -= 0.5
         return rew
 
     def observation(self, agent, world):
@@ -115,9 +106,8 @@ class Scenario(BaseScenario):
         dis_lm_n = []
         num_preys_obs = world.num_preys_obs
         for entity in world.preys:  # world.entities:
-            if not entity.eaten:
-                entity_pos.append(entity.state.p_pos - agent.state.p_pos)
-                dis_lm_n.append(np.sqrt(np.sum(np.square(agent.state.p_pos - entity.state.p_pos))))
+            entity_pos.append(entity.state.p_pos - agent.state.p_pos)
+            dis_lm_n.append(np.sqrt(np.sum(np.square(agent.state.p_pos - entity.state.p_pos))))
         sort_index = sorted(range(len(dis_lm_n)), key=lambda k: dis_lm_n[k])
         near_lm_pos = [entity_pos[sort_index[i]] for i in range(num_preys_obs)]
         # get positions of predefined agents
@@ -129,7 +119,6 @@ class Scenario(BaseScenario):
             dis_agent_n.append(np.sqrt(np.sum(np.square(agent.state.p_pos - other.state.p_pos))))
             other_pos.append(other.state.p_pos - agent.state.p_pos)
         sort_index = sorted(range(len(dis_agent_n)), key=lambda k: dis_agent_n[k])
-        # print(sort_index)
         near_agent_pos = [other_pos[sort_index[i]] for i in range(num_agents_obs)]
         return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + near_lm_pos + near_agent_pos)
 

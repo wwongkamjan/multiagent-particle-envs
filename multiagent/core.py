@@ -105,6 +105,8 @@ class World(object):
         self.num_landmarks_obs = 0
         self.num_preys_obs = 0
 
+        self.eaten = False
+
     # return all entities in the world
     @property
     def entities(self):
